@@ -29,3 +29,29 @@ jobs:
           fi
       - name: Check Go project inside Docker Compose
         run: make tidy && make fmt && make check
+
+  ingestion-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start Collector and VictoriaMetrics
+        run: docker compose up -d otel-collector victoriametrics
+      - name: Send one OTLP Metrics batch
+        run: make run-otlp ARGS='-count 1'
+      - name: Confirm temperature series in VictoriaMetrics
+        run: |
+          for attempt in $(seq 1 30); do
+            if response="$(curl --silent --show-error --fail --get 'http://localhost:8428/api/v1/query' --data-urlencode 'query=temperature{site_id="S001",area="A01"}')"; then
+              if echo "$response" | jq -e '.data.result | length > 0' >/dev/null; then
+                echo "Temperature series successfully ingested"
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+          echo "No temperature series found in VictoriaMetrics"
+          docker compose logs otel-collector victoriametrics
+          exit 1
+      - name: Stop services
+        if: always()
+        run: docker compose down
