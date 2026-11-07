@@ -54,7 +54,7 @@ func TestCountOptions(t *testing.T) {
 
 func TestOutputOptions(t *testing.T) {
 	for _, tt := range []struct {
-		args []string
+		args  []string
 		valid bool
 	}{
 		{[]string{"-output", "stdout"}, true},

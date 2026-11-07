@@ -17,7 +17,7 @@ func testBatch() generator.Batch {
 	return generator.Batch{ResourceMetrics: []generator.ResourceMetrics{{
 		Resource: generator.Resource{Attributes: map[string]string{
 			"monitoring.domain": "site_iot",
-			"site_id": "S001",
+			"site_id":           "S001",
 		}},
 		ScopeMetrics: []generator.ScopeMetrics{{
 			Scope: generator.Scope{Name: "plc-reader"},
@@ -46,21 +46,23 @@ func TestMarshalOTLP(t *testing.T) {
 		ResourceMetrics []struct {
 			Resource struct {
 				Attributes []struct {
-					Key string `json:"key"`
-					Value struct{ StringValue string `json:"stringValue"` } `json:"value"`
+					Key   string `json:"key"`
+					Value struct {
+						StringValue string `json:"stringValue"`
+					} `json:"value"`
 				} `json:"attributes"`
 			} `json:"resource"`
 			ScopeMetrics []struct {
 				Metrics []struct {
 					Gauge *struct {
 						DataPoints []struct {
-							AsDouble float64 `json:"asDouble"`
-							TimeUnixNano string `json:"timeUnixNano"`
+							AsDouble     float64 `json:"asDouble"`
+							TimeUnixNano string  `json:"timeUnixNano"`
 						} `json:"dataPoints"`
 					} `json:"gauge"`
 					Sum *struct {
-						AggregationTemporality int `json:"aggregationTemporality"`
-						IsMonotonic bool `json:"isMonotonic"`
+						AggregationTemporality int  `json:"aggregationTemporality"`
+						IsMonotonic            bool `json:"isMonotonic"`
 					} `json:"sum"`
 				} `json:"metrics"`
 			} `json:"scopeMetrics"`

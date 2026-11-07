@@ -65,7 +65,7 @@ type exportRequest struct {
 }
 
 type resourceMetrics struct {
-	Resource     otlpResource  `json:"resource"`
+	Resource     otlpResource   `json:"resource"`
 	ScopeMetrics []scopeMetrics `json:"scopeMetrics"`
 }
 

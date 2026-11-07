@@ -23,15 +23,15 @@ func parseStart(s string) (time.Time, error) {
 }
 
 type options struct {
-	start      time.Time
-	days       int
-	count      int
-	countMode  bool
-	interval   time.Duration
-	seed       int64
-	configDir  string
-	output     string
-	endpoint   string
+	start     time.Time
+	days      int
+	count     int
+	countMode bool
+	interval  time.Duration
+	seed      int64
+	configDir string
+	output    string
+	endpoint  string
 }
 
 func parseOptions(args []string) (options, error) {
