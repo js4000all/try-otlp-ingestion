@@ -49,3 +49,88 @@ func TestInvalidConfig(t *testing.T){
  c:=sampleConfig(t);c.Sites[0].Areas[0].Targets[0].Sensors[0].Metric="missing"
  if err:=c.Validate();err==nil{t.Fatal("expected validation failure")}
 }
+
+func TestRunCountSingleImmediate(t *testing.T) {
+	start := time.Now().Add(-time.Second)
+	g := New(sampleConfig(t), 1, start)
+	var out bytes.Buffer
+	if err := g.RunCount(context.Background(), &out, 1, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	var batch Batch
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &batch); err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.ResourceMetrics) != 7 {
+		t.Fatalf("resources=%d want 7", len(batch.ResourceMetrics))
+	}
+	for _, rm := range batch.ResourceMetrics {
+		for _, sm := range rm.ScopeMetrics {
+			for _, m := range sm.Metrics {
+				for _, dp := range m.DataPoints {
+					if !dp.Timestamp.Equal(start) {
+						t.Fatalf("timestamp=%v want %v", dp.Timestamp, start)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestRunCountMultipleScheduled(t *testing.T) {
+	start := time.Now().Add(-time.Second)
+	interval := 15*time.Millisecond
+	g := New(sampleConfig(t), 1, start)
+	var out bytes.Buffer
+	if err := g.RunCount(context.Background(), &out, 4, interval); err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(out.Bytes()), []byte("\n"))
+	if len(lines) != 4 {
+		t.Fatalf("lines=%d want 4", len(lines))
+	}
+	for i, line := range lines {
+		var batch Batch
+		if err := json.Unmarshal(line, &batch); err != nil {
+			t.Fatal(err)
+		}
+		got := batch.ResourceMetrics[0].ScopeMetrics[0].Metrics[0].DataPoints[0].Timestamp
+		want := start.Add(time.Duration(i)*interval)
+		if !got.Equal(want) {
+			t.Fatalf("sample %d timestamp=%v want %v", i, got, want)
+		}
+	}
+}
+
+func TestRunCountFutureCancellation(t *testing.T) {
+	start := time.Now().Add(time.Hour)
+	g := New(sampleConfig(t), 1, start)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out bytes.Buffer
+	if err := g.RunCount(ctx, &out, 3, time.Minute); err != context.Canceled {
+		t.Fatalf("got %v want context.Canceled", err)
+	}
+	if out.Len() != 0 {
+		t.Fatal("future data emitted early")
+	}
+}
+
+func TestRunCountInvalid(t *testing.T) {
+	g := New(sampleConfig(t), 1, time.Now())
+	for _, test := range []struct{ count int; interval time.Duration }{
+		{0, time.Second}, {-1, time.Second}, {1, 0}, {1, -time.Second},
+	} {
+		if err := g.RunCount(context.Background(), &bytes.Buffer{}, test.count, test.interval); err == nil {
+			t.Fatalf("accepted count=%d interval=%v", test.count, test.interval)
+		}
+	}
+}
+
+func TestWaitUntilFutureCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitUntil(ctx, time.Now().Add(time.Hour)); err != context.Canceled {
+		t.Fatalf("got %v want context.Canceled", err)
+	}
+}
