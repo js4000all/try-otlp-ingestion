@@ -13,19 +13,23 @@ make run ARGS='-start 2026-11-01 -days 2 -interval 1h' > samples.jsonl
 # JSTで開始時刻を指定（タイムゾーン付きRFC3339）
 make run ARGS='-start 2026-11-07T12:00:00+09:00 -days 1 -interval 1m -seed 42'
 
+# 現在時刻を始点として5回生成（初回即時、10秒間隔で計4回待機）
+make run ARGS='-count 5 -interval 10s' | jq -c '.resourceMetrics | length'
+
 make test
 make check
 ```
 
 | 引数 | 既定値 | 意味 |
 |---|---|---|
-| `-start` | 当日のUTC日付 | `YYYY-MM-DD`（UTC 00:00）またはRFC3339日時 |
-| `-days` | `1` | 開始日からの日数（開始を含み終了を含まない） |
+| `-start` | 当日のUTC日付 | 期間指定モードの開始日時。`YYYY-MM-DD`（UTC 00:00）またはRFC3339日時 |
+| `-days` | `1` | 期間指定モードの日数（開始を含み終了を含まない） |
+| `-count` | 指定なし | 現在時刻を始点に指定回数生成する回数指定モード（1以上） |
 | `-interval` | `1m` | サンプリング間隔（`10s`, `5m`, `1h` 等） |
 | `-seed` | `1` | 乱数シード |
 | `-config` | `config` | 設定ファイルのディレクトリ |
 
-**過去時刻は即時に生成し、未来時刻はその対象時刻まで待機**します。Ctrl+Cで停止できます。長期間・短間隔では出力量が増える点に注意してください。
+**期間指定モード:** 過去時刻は即時に生成し、未来時刻はその対象時刻まで待機します。**回数指定モード:** `-count N` で実行時刻から計N回生成します。初回は即時、インターバルはN−1回です（`-count 1` は待機なし）。`-count` は `-start` / `-days` の明示指定と併用できません。時刻は開始時刻とインターバルから固定して計算するため、出力処理が遅れても時刻のずれが累積しません。Ctrl+Cで停止できます。長期間・短間隔では出力量が増える点に注意してください。
 
 出力は1サンプリング時刻につき1行のJSON Lines（標準出力）です。Resource / Scope / Metric / DataPointを階層化した**OTLP風の独自JSON**であり、公式のOTLP/JSON wire formatではありません。Collectorへの投入形式への変換は今後実装します。
 
