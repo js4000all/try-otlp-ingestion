@@ -11,5 +11,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject unformatted changed Go files
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.go')
+          if (("${#files[@]}" == 0)); then
+            echo "No changed Go files"
+            exit 0
+          fi
+          unformatted="$(docker compose run --rm go gofmt -l "${files[@]}")"
+          if [[ -n "$unformatted" ]]; then
+            printf 'Go files require gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
       - name: Check Go project inside Docker Compose
         run: make tidy && make fmt && make check
