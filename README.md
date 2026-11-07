@@ -71,3 +71,54 @@ make check
 `make tidy` / `make fmt` により変更されたファイルを確認し、**整形結果も含めてコミットしてからpush**してください。チェックに失敗した場合は修正して再実行します。Goソースは読みやすさを優先し、複数の宣言・条件分岐・ループ・エラー処理を不必要に1行へ圧縮しません。フォーマッターだけで可読性が保証されるわけではないため、差分を目視でも確認してください。
 
 AIによる変更も含めた詳細な規約は [AGENTS.md](AGENTS.md) を参照してください。
+
+## CollectorとVictoriaMetricsへの投入
+
+ComposeでCollectorとVictoriaMetricsを起動します。公開ポートはローカルホスト限定です。
+
+```sh
+make up
+make ps
+
+# GoコンテナからCollectorへ送信（19系列を10秒間隔で5回）
+make run-otlp ARGS='-count 5 -interval 10s'
+
+# 登録されたメトリクス名を確認
+curl -s 'http://localhost:8428/api/v1/label/__name__/values' | jq .
+
+# S001/A01の系列
+curl -G 'http://localhost:8428/api/v1/query' \
+  --data-urlencode 'query={site_id="S001",area="A01"}' | jq .
+
+# 温度メトリクス
+curl -G 'http://localhost:8428/api/v1/query' \
+  --data-urlencode 'query=temperature{site_id="S001",area="A01"}' | jq .
+
+make logs
+make down
+```
+
+`-output stdout`（既定値）は従来の独自JSON Lines出力です。`-output otlp` は**OTLP/HTTP JSON**に変換して送信します。Resource/Scope/DataPoint属性、GaugeとCumulative Sumを保持します。HTTPエラーが返された場合は生成を停止します。
+
+```sh
+# デフォルトはCompose内CollectorのURL
+make run ARGS='-output otlp -count 5 -interval 10s'
+
+# Goコンテナ内からアクセスできる別のCollectorへ送信
+make run-otlp OTLP_ENDPOINT=http://otel-collector:4318/v1/metrics ARGS='-count 5 -interval 10s'
+
+# ホストから直接実行するときは localhost を指定
+./bin/otlpgen -output otlp -otlp-endpoint http://localhost:4318/v1/metrics -count 5
+```
+
+`-otlp-endpoint` は**`/v1/metrics`を含む完全なURL**です。Compose内のGoコンテナからは `localhost` ではなく `otel-collector` のサービス名を使用します。
+
+CollectorからVictoriaMetricsへの転送先も変更できます。Compose起動前に `VM_OTLP_METRICS_ENDPOINT` を指定してください。
+
+```sh
+VM_OTLP_METRICS_ENDPOINT=http://victoriametrics:8428/opentelemetry/v1/metrics make up
+```
+
+単一ノードVictoriaMetricsのOTLP受信URLは `http://victoriametrics:8428/opentelemetry/v1/metrics` です。Collectorの設定は `collector/config.yaml` にあります。VictoriaMetricsの保存データは `vm-data` ボリュームに保持され、`make down` では消去しません。
+
+ローカル検証専用で、認証やTLSは設定していません。公開ネットワークにポートを開放しないでください。

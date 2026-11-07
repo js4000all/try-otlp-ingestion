@@ -252,43 +252,58 @@ func (g *Generator) opsMetrics(reader Reader, plc PLC, at time.Time) ResourceMet
 	}
 }
 
-// Run writes one JSON object per sample timestamp in [start, start+days).
-// Future samples wait for their wall-clock timestamp; past samples emit immediately.
+// Run writes JSON Lines to out for each timestamp in [start, start+days).
 func (g *Generator) Run(ctx context.Context, out io.Writer, days int, interval time.Duration) error {
+	encoder := json.NewEncoder(out)
+	return g.RunTo(ctx, days, interval, func(_ context.Context, batch Batch) error {
+		return encoder.Encode(batch)
+	})
+}
+
+// RunTo emits each batch to a caller-provided destination, preserving timestamps.
+func (g *Generator) RunTo(ctx context.Context, days int, interval time.Duration, emit func(context.Context, Batch) error) error {
 	if days <= 0 || interval <= 0 {
 		return fmt.Errorf("days and interval must be positive")
 	}
 
 	end := g.start.AddDate(0, 0, days)
-	encoder := json.NewEncoder(out)
 	for at := g.start; at.Before(end); at = at.Add(interval) {
-		if err := waitUntil(ctx, at); err != nil {
+		if err := g.emitAt(ctx, at, emit); err != nil {
 			return err
-		}
-		if err := encoder.Encode(g.At(at)); err != nil {
-			return fmt.Errorf("write timestamp %s: %w", at.Format(time.RFC3339), err)
 		}
 	}
 	return nil
 }
 
-// RunCount writes exactly count samples, beginning at the generator's start time.
-// Scheduled timestamps are start + i*interval, so there are count-1 waits.
-// Slow output does not shift subsequent sample timestamps.
+// RunCount writes exactly count batches as JSON Lines, starting at g.start.
 func (g *Generator) RunCount(ctx context.Context, out io.Writer, count int, interval time.Duration) error {
+	encoder := json.NewEncoder(out)
+	return g.RunCountTo(ctx, count, interval, func(_ context.Context, batch Batch) error {
+		return encoder.Encode(batch)
+	})
+}
+
+// RunCountTo sends count batches using start+i*interval (count-1 waits).
+func (g *Generator) RunCountTo(ctx context.Context, count int, interval time.Duration, emit func(context.Context, Batch) error) error {
 	if count <= 0 || interval <= 0 {
 		return fmt.Errorf("count and interval must be positive")
 	}
 
-	encoder := json.NewEncoder(out)
 	for i := 0; i < count; i++ {
 		at := g.start.Add(time.Duration(i) * interval)
-		if err := waitUntil(ctx, at); err != nil {
+		if err := g.emitAt(ctx, at, emit); err != nil {
 			return err
 		}
-		if err := encoder.Encode(g.At(at)); err != nil {
-			return fmt.Errorf("write timestamp %s: %w", at.Format(time.RFC3339Nano), err)
-		}
+	}
+	return nil
+}
+
+func (g *Generator) emitAt(ctx context.Context, at time.Time, emit func(context.Context, Batch) error) error {
+	if err := waitUntil(ctx, at); err != nil {
+		return err
+	}
+	if err := emit(ctx, g.At(at)); err != nil {
+		return fmt.Errorf("send timestamp %s: %w", at.Format(time.RFC3339Nano), err)
 	}
 	return nil
 }

@@ -51,3 +51,21 @@ func TestCountOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestOutputOptions(t *testing.T) {
+	for _, tt := range []struct {
+		args  []string
+		valid bool
+	}{
+		{[]string{"-output", "stdout"}, true},
+		{[]string{"-output", "otlp", "-otlp-endpoint", "http://otel-collector:4318/v1/metrics"}, true},
+		{[]string{"-output", "otlp", "-otlp-endpoint", "http://127.0.0.1:4318/v1/metrics"}, true},
+		{[]string{"-output", "invalid"}, false},
+		{[]string{"-output", "otlp", "-otlp-endpoint", "invalid"}, false},
+	} {
+		_, err := parseOptions(tt.args)
+		if (err == nil) != tt.valid {
+			t.Fatalf("parseOptions(%v): err=%v, want valid=%v", tt.args, err, tt.valid)
+		}
+	}
+}

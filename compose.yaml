@@ -8,3 +8,27 @@ services:
       GOCACHE: /workspace/.cache/go-build
       GOMODCACHE: /workspace/.cache/mod
       GOPATH: /workspace/.cache/gopath
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.135.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      VM_OTLP_METRICS_ENDPOINT: ${VM_OTLP_METRICS_ENDPOINT:-http://victoriametrics:8428/opentelemetry/v1/metrics}
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      - victoriametrics
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.125.1
+    ports:
+      - "127.0.0.1:8428:8428"
+    volumes:
+      - vm-data:/victoria-metrics-data
+    command:
+      - "-storageDataPath=/victoria-metrics-data"
+
+volumes:
+  vm-data:
