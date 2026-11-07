@@ -1,0 +1,32 @@
+target_types:
+  motor:
+    metrics:
+      - name: temperature
+        unit: Cel
+        type: gauge
+        channels:
+          - position: bearing
+            generator: {pattern: sine, baseline: 65, amplitude: 8, period: 3600, noise: 0.5}
+          - position: winding
+            generator: {pattern: random_walk, baseline: 72, step: 0.3, min: 60, max: 90}
+      - name: vibration
+        unit: mm/s
+        type: gauge
+        channels:
+          - position: bearing
+            generator: {pattern: spike, baseline: 2, noise: 0.2, spike_probability: 0.02, spike_amplitude: 5}
+      - name: motor.running
+        unit: "1"
+        type: gauge
+        signal_type: boolean
+        channels:
+          - position: running
+            generator: {pattern: toggle, initial: 1, interval: 1800}
+ops_metrics:
+  plc-reader:
+    - name: plc_reader.read_errors
+      unit: "{error}"
+      type: sum
+      monotonic: true
+      temporality: cumulative
+      generator: {pattern: counter, initial: 0, increment_probability: 0.03, increment: 1}

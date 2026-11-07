@@ -12,4 +12,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check Go project inside Docker Compose
-        run: make check
+        run: make tidy && make fmt && make check

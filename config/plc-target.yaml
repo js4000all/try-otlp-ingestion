@@ -1,0 +1,15 @@
+readers:
+  - id: reader_01
+    site_id: S001
+    host_id: raspi_01
+    plcs:
+      - id: plc_01
+        targets: [motor_01, motor_02]
+      - id: plc_02
+        targets: [motor_03]
+  - id: reader_02
+    site_id: S002
+    host_id: raspi_02
+    plcs:
+      - id: plc_03
+        targets: [motor_04]

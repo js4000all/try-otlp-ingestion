@@ -1,46 +1,55 @@
 # try-otlp-ingestion
 
-OTLPで計測データを投入し、各データストアでの保存・検索方法を比較するための実験用リポジトリです。
+OTLPデータの保存・検索を比較するためのダミーデータ生成ツールです。Goの実行環境はDocker Composeで提供し、ホストにGoをインストールする必要はありません。
 
-この段階では **Goの開発環境のみ** を用意しています。ダミーデータ生成、OTLP送信、OpenTelemetry Collectorやデータストアの構成は今後追加します。
+## 実行
 
-## 前提
-
-- Docker EngineとDocker Compose v2（`docker compose`）
-- Make
-
-ホスト側へのGoコンパイラのインストールは不要です。
-
-## 使い方
+Docker Engine / Docker Compose v2 とMakeが必要です。
 
 ```sh
-make help    # コマンド一覧
-make run     # 動作確認用プログラムを実行
-make build   # bin/otlpgen にLinux向けバイナリを生成
-make test    # go test ./...
-make vet     # go vet ./...
-make fmt     # go fmt ./...
-make tidy    # go mod tidy
-make check   # fmt-check、test、vet、build
-make shell   # Goコンテナ内でシェルを起動
-make clean   # ローカルの生成物とキャッシュを削除
+# 2026-11-01 UTC 00:00から2日分を1時間間隔で生成
+make run ARGS='-start 2026-11-01 -days 2 -interval 1h' > samples.jsonl
+
+# JSTで開始時刻を指定（タイムゾーン付きRFC3339）
+make run ARGS='-start 2026-11-07T12:00:00+09:00 -days 1 -interval 1m -seed 42'
+
+make test
+make check
 ```
 
-GoコマンドはすべてComposeの `go` サービス内で実行します。ソースコード、`bin/` と `.cache/` はローカルの作業ディレクトリに置かれますが、`bin/` と `.cache/` はGit管理対象外です。MakefileからホストのUID/GIDを渡すので、生成物の所有者は通常ホストのユーザーと一致します。
+| 引数 | 既定値 | 意味 |
+|---|---|---|
+| `-start` | 当日のUTC日付 | `YYYY-MM-DD`（UTC 00:00）またはRFC3339日時 |
+| `-days` | `1` | 開始日からの日数（開始を含み終了を含まない） |
+| `-interval` | `1m` | サンプリング間隔（`10s`, `5m`, `1h` 等） |
+| `-seed` | `1` | 乱数シード |
+| `-config` | `config` | 設定ファイルのディレクトリ |
 
-`make build` はLinux用バイナリを生成します。macOS/Windowsホスト上での動作確認には `make run` を利用してください。
+**過去時刻は即時に生成し、未来時刻はその対象時刻まで待機**します。Ctrl+Cで停止できます。長期間・短間隔では出力量が増える点に注意してください。
 
-## 構成
+出力は1サンプリング時刻につき1行のJSON Lines（標準出力）です。Resource / Scope / Metric / DataPointを階層化した**OTLP風の独自JSON**であり、公式のOTLP/JSON wire formatではありません。Collectorへの投入形式への変換は今後実装します。
 
-```text
-.
-├── .github/workflows/ci.yml  # PR時のチェック
-├── cmd/otlpgen/main.go        # 起動確認用の最小プログラム
-├── compose.yaml               # Go開発用コンテナ
-├── go.mod
-└── Makefile
+## 設定
+
+| ファイル | 定義 |
+|---|---|
+| `config/target-metric.yaml` | ターゲット種別のMetricと値の生成パターン、運用Metric |
+| `config/site-area-target.yaml` | サイト、区画、ターゲット、センサー |
+| `config/plc-target.yaml` | PLC Reader、PLC、ターゲットの対応 |
+
+現在は2サイト・4モーター・3PLCです。温度（軸受: sine、巻線: random walk）、振動（spike）、運転状態（toggle）、PLC読み取りエラー累積（counter）の4 Metricを生成します。サイトIoTと運用監視のドメインはResource属性 `monitoring.domain` で区別します。
+
+## 開発コマンド
+
+```sh
+make help
+make run ARGS='-start 2026-11-01 -days 1 -interval 1h'
+make build
+make test
+make vet
+make fmt
+make tidy
+make check
+make shell
+make clean
 ```
-
-## 今後の作業
-
-テストデータのResource / Scope / Metric / DataPointの設計を確定してから、OTLP Metrics生成・送信処理とCollectorを追加します。
