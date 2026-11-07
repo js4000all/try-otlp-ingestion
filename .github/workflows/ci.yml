@@ -38,12 +38,6 @@ jobs:
         run: docker compose up -d otel-collector victoriametrics
       - name: Send one OTLP Metrics batch
         run: |
-          make tidy
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          print('GO_SUM_JSON=' + json.dumps(Path('go.sum').read_text()))
-          PY
           make run-otlp ARGS='-count 1'
       - name: Confirm temperature series in VictoriaMetrics
         run: |
