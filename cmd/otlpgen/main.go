@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/js4000all/try-otlp-ingestion/internal/generator"
+	"github.com/js4000all/try-otlp-ingestion/internal/otlphttp"
 )
 
 func parseStart(s string) (time.Time, error) {
@@ -29,6 +30,8 @@ type options struct {
 	interval   time.Duration
 	seed       int64
 	configDir  string
+	output     string
+	endpoint   string
 }
 
 func parseOptions(args []string) (options, error) {
@@ -40,6 +43,8 @@ func parseOptions(args []string) (options, error) {
 	interval := fs.Duration("interval", time.Minute, "sample interval (e.g. 1m, 10s)")
 	seed := fs.Int64("seed", 1, "random seed")
 	configDir := fs.String("config", "config", "configuration directory")
+	output := fs.String("output", "stdout", "output: stdout or otlp")
+	endpoint := fs.String("otlp-endpoint", "http://otel-collector:4318/v1/metrics", "full OTLP/HTTP metrics URL")
 	if err := fs.Parse(args); err != nil {
 		return opt, err
 	}
@@ -75,6 +80,16 @@ func parseOptions(args []string) (options, error) {
 	opt.count = *count
 	opt.interval = *interval
 	opt.seed = *seed
+	if *output != "stdout" && *output != "otlp" {
+		return opt, fmt.Errorf("invalid -output %q: use stdout or otlp", *output)
+	}
+	opt.output = *output
+	opt.endpoint = *endpoint
+	if opt.output == "otlp" {
+		if _, err := otlphttp.New(opt.endpoint); err != nil {
+			return opt, err
+		}
+	}
 	opt.configDir = *configDir
 	return opt, nil
 }
@@ -91,11 +106,29 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	var start time.Time
 	if opt.countMode {
-		start := time.Now()
-		return generator.New(cfg, opt.seed, start).RunCount(ctx, os.Stdout, opt.count, opt.interval)
+		start = time.Now()
+	} else {
+		start = opt.start
 	}
-	return generator.New(cfg, opt.seed, opt.start).Run(ctx, os.Stdout, opt.days, opt.interval)
+	g := generator.New(cfg, opt.seed, start)
+
+	if opt.output == "otlp" {
+		client, err := otlphttp.New(opt.endpoint)
+		if err != nil {
+			return err
+		}
+		if opt.countMode {
+			return g.RunCountTo(ctx, opt.count, opt.interval, client.Send)
+		}
+		return g.RunTo(ctx, opt.days, opt.interval, client.Send)
+	}
+
+	if opt.countMode {
+		return g.RunCount(ctx, os.Stdout, opt.count, opt.interval)
+	}
+	return g.Run(ctx, os.Stdout, opt.days, opt.interval)
 }
 
 func main() {

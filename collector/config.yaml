@@ -1,0 +1,17 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlphttp/victoriametrics:
+    metrics_endpoint: ${env:VM_OTLP_METRICS_ENDPOINT}
+    encoding: proto
+    compression: gzip
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [otlphttp/victoriametrics]
