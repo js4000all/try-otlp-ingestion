@@ -1,0 +1,39 @@
+sites:
+  - id: S001
+    areas:
+      - id: A01
+        targets:
+          - id: motor_01
+            type: motor
+            sensors:
+              - {id: T0001, metric: temperature, position: bearing}
+              - {id: T0002, metric: temperature, position: winding}
+              - {id: V0001, metric: vibration, position: bearing}
+              - {id: M0001, metric: motor.running, position: running}
+          - id: motor_02
+            type: motor
+            sensors:
+              - {id: T0003, metric: temperature, position: bearing}
+              - {id: T0004, metric: temperature, position: winding}
+              - {id: V0002, metric: vibration, position: bearing}
+              - {id: M0002, metric: motor.running, position: running}
+      - id: A02
+        targets:
+          - id: motor_03
+            type: motor
+            sensors:
+              - {id: T0005, metric: temperature, position: bearing}
+              - {id: T0006, metric: temperature, position: winding}
+              - {id: V0003, metric: vibration, position: bearing}
+              - {id: M0003, metric: motor.running, position: running}
+  - id: S002
+    areas:
+      - id: A01
+        targets:
+          - id: motor_04
+            type: motor
+            sensors:
+              - {id: T0007, metric: temperature, position: bearing}
+              - {id: T0008, metric: temperature, position: winding}
+              - {id: V0004, metric: vibration, position: bearing}
+              - {id: M0004, metric: motor.running, position: running}
