@@ -125,3 +125,41 @@ func(g *Generator)Run(ctx context.Context,out io.Writer,days int,interval time.D
  }
  return nil
 }
+
+
+// RunCount writes exactly count samples, beginning at the generator's start time.
+// Scheduled timestamps are start + i*interval, so there are count-1 waits.
+// Slow output does not shift subsequent sample timestamps.
+func (g *Generator) RunCount(ctx context.Context, out io.Writer, count int, interval time.Duration) error {
+	if count <= 0 || interval <= 0 {
+		return fmt.Errorf("count and interval must be positive")
+	}
+	encoder := json.NewEncoder(out)
+	for i := 0; i < count; i++ {
+		at := g.start.Add(time.Duration(i) * interval)
+		if err := waitUntil(ctx, at); err != nil {
+			return err
+		}
+		if err := encoder.Encode(g.At(at)); err != nil {
+			return fmt.Errorf("write timestamp %s: %w", at.Format(time.RFC3339Nano), err)
+		}
+	}
+	return nil
+}
+
+// waitUntil returns immediately for past timestamps and can be interrupted while waiting.
+func waitUntil(ctx context.Context, at time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if delay := time.Until(at); delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return ctx.Err()
+}
