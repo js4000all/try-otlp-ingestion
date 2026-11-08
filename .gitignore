@@ -1,5 +1,6 @@
 /bin/
 /.cache/
+.env
 *.test
 *.out
 .DS_Store
