@@ -72,9 +72,9 @@ make check
 
 AIによる変更も含めた詳細な規約は [AGENTS.md](AGENTS.md) を参照してください。
 
-## CollectorとVictoriaMetricsへの投入
+## CollectorからVictoriaMetrics / Grafana Cloudへの投入
 
-ComposeでCollectorとVictoriaMetricsを起動します。公開ポートはローカルホスト限定です。
+デフォルトではComposeでCollectorとVictoriaMetricsを起動し、VictoriaMetricsに送信します。公開ポートはローカルホスト限定です。
 
 ```sh
 make up
@@ -119,6 +119,26 @@ CollectorからVictoriaMetricsへの転送先も変更できます。Compose起�
 VM_OTLP_METRICS_ENDPOINT=http://victoriametrics:8428/opentelemetry/v1/metrics make up
 ```
 
-単一ノードVictoriaMetricsのOTLP受信URLは `http://victoriametrics:8428/opentelemetry/v1/metrics` です。Collectorの設定は `collector/config.yaml` にあります。VictoriaMetricsの保存データは `vm-data` ボリュームに保持され、`make down` では消去しません。
+単一ノードVictoriaMetricsのOTLP受信URLは `http://victoriametrics:8428/opentelemetry/v1/metrics` です。デフォルトのCollector設定は `collector/local.yaml` にあります。VictoriaMetricsの保存データは `vm-data` ボリュームに保持され、`make down` では消去しません。
+
+### Collector送信先の切り替え
+
+Collector設定は `collector/local.yaml`（VictoriaMetrics用）と `collector/grafana-cloud.yaml`（Grafana Cloud用）から選択できます。Composeが `OTEL_COLLECTOR_CONFIG` を展開します。未指定の場合は `local.yaml` が使われ、`.env` がなくてもローカル構成を起動できます。
+
+```sh
+cp .env.example .env
+# .envにOTEL_COLLECTOR_CONFIGとGrafana Cloudの認証情報を設定
+make up
+make run-otlp ARGS='-count 5 -interval 10s'
+
+# .envを変更せずに今回だけGrafana Cloud用設定を使う
+OTEL_COLLECTOR_CONFIG=grafana-cloud.yaml make up
+```
+
+Grafana Cloudの「Collector setup」で取得したOTLP endpoint（`https://.../otlp`）、instance ID、書き込み権限付きtokenを、それぞれ `GRAFANA_CLOUD_OTLP_ENDPOINT`、`GRAFANA_CLOUD_INSTANCE_ID`、`GRAFANA_CLOUD_API_KEY` に設定してください。Grafana Cloud用の設定はOTLP/HTTPでmetricsを送信します。現在の`otlpgen`はmetricsのみを生成します。
+
+Composeの `.env` は設定選択に使われ、`env_file` によりCollectorコンテナにも渡されます。`.env` はGit管理対象外です。**認証情報をコミットしないでください。** 設定を切り替えた場合は、Collectorの再作成を確認してください（必要なら `docker compose up -d --force-recreate otel-collector`）。
+
+Grafana Cloud向け設定を選択しても、現状の `make up` はVictoriaMetricsコンテナも起動しますが、Grafana Cloud向けpipelineはVictoriaMetricsへ送信しません。ローカル設定とクラウド設定は独立しています。
 
 ローカル検証専用で、認証やTLSは設定していません。公開ネットワークにポートを開放しないでください。
