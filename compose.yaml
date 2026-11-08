@@ -11,9 +11,12 @@ services:
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.135.0
-    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    command: ["--config=/etc/otelcol-contrib/${OTEL_COLLECTOR_CONFIG:-local.yaml}"]
     volumes:
-      - ./collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./collector:/etc/otelcol-contrib:ro
+    env_file:
+      - path: .env
+        required: false
     environment:
       VM_OTLP_METRICS_ENDPOINT: ${VM_OTLP_METRICS_ENDPOINT:-http://victoriametrics:8428/opentelemetry/v1/metrics}
     ports:
