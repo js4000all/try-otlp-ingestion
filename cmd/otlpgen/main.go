@@ -23,15 +23,16 @@ func parseStart(s string) (time.Time, error) {
 }
 
 type options struct {
-	start     time.Time
-	days      int
-	count     int
-	countMode bool
-	interval  time.Duration
-	seed      int64
-	configDir string
-	output    string
-	endpoint  string
+	start        time.Time
+	days         int
+	count        int
+	countMode    bool
+	interval     time.Duration
+	sendInterval time.Duration
+	seed         int64
+	configDir    string
+	output       string
+	endpoint     string
 }
 
 func parseOptions(args []string) (options, error) {
@@ -41,6 +42,7 @@ func parseOptions(args []string) (options, error) {
 	days := fs.Int("days", 1, "number of calendar days (period mode)")
 	count := fs.Int("count", 0, "number of samples starting now (count mode)")
 	interval := fs.Duration("interval", time.Minute, "sample interval (e.g. 1m, 10s)")
+	sendInterval := fs.Duration("send-interval", 0, "minimum interval between OTLP request starts (0 disables pacing)")
 	seed := fs.Int64("seed", 1, "random seed")
 	configDir := fs.String("config", "config", "configuration directory")
 	output := fs.String("output", "stdout", "output: stdout or otlp")
@@ -57,6 +59,12 @@ func parseOptions(args []string) (options, error) {
 	opt.countMode = seen["count"]
 	if *interval <= 0 {
 		return opt, fmt.Errorf("-interval must be positive")
+	}
+	if *sendInterval < 0 {
+		return opt, fmt.Errorf("-send-interval must be non-negative")
+	}
+	if *sendInterval > 0 && *output != "otlp" {
+		return opt, fmt.Errorf("-send-interval requires -output otlp")
 	}
 	if opt.countMode {
 		if *count <= 0 {
@@ -79,6 +87,7 @@ func parseOptions(args []string) (options, error) {
 	opt.days = *days
 	opt.count = *count
 	opt.interval = *interval
+	opt.sendInterval = *sendInterval
 	opt.seed = *seed
 	if *output != "stdout" && *output != "otlp" {
 		return opt, fmt.Errorf("invalid -output %q: use stdout or otlp", *output)
@@ -119,10 +128,14 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		if opt.countMode {
-			return g.RunCountTo(ctx, opt.count, opt.interval, client.Send)
+		send := client.Send
+		if opt.sendInterval > 0 {
+			send = paceSender(send, opt.sendInterval)
 		}
-		return g.RunTo(ctx, opt.days, opt.interval, client.Send)
+		if opt.countMode {
+			return g.RunCountTo(ctx, opt.count, opt.interval, send)
+		}
+		return g.RunTo(ctx, opt.days, opt.interval, send)
 	}
 
 	if opt.countMode {

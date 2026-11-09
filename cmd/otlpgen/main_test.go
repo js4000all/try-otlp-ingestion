@@ -69,3 +69,29 @@ func TestOutputOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestSendIntervalOptions(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want time.Duration
+		ok   bool
+	}{
+		{"default", []string{"-output", "otlp"}, 0, true},
+		{"pacing", []string{"-output", "otlp", "-send-interval", "100ms"}, 100 * time.Millisecond, true},
+		{"disabled", []string{"-output", "otlp", "-send-interval", "0"}, 0, true},
+		{"negative", []string{"-output", "otlp", "-send-interval", "-1s"}, 0, false},
+		{"stdout rejected", []string{"-send-interval", "100ms"}, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opt, err := parseOptions(tt.args)
+			if (err == nil) != tt.ok {
+				t.Fatalf("parseOptions(%v): err=%v want success=%v", tt.args, err, tt.ok)
+			}
+			if tt.ok && opt.sendInterval != tt.want {
+				t.Fatalf("sendInterval=%v want %v", opt.sendInterval, tt.want)
+			}
+		})
+	}
+}

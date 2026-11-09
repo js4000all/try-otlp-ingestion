@@ -26,6 +26,7 @@ make check
 | `-days` | `1` | 期間指定モードの日数（開始を含み終了を含まない） |
 | `-count` | 指定なし | 現在時刻を始点に指定回数生成する回数指定モード（1以上） |
 | `-interval` | `1m` | サンプリング間隔（`10s`, `5m`, `1h` 等） |
+| `-send-interval` | `0` | OTLP送信リクエスト開始間の最小間隔（例: `100ms`）。`0` は無制限。`-output otlp` のみ対応 |
 | `-seed` | `1` | 乱数シード |
 | `-config` | `config` | 設定ファイルのディレクトリ |
 
@@ -120,6 +121,19 @@ VM_OTLP_METRICS_ENDPOINT=http://victoriametrics:8428/opentelemetry/v1/metrics ma
 ```
 
 単一ノードVictoriaMetricsのOTLP受信URLは `http://victoriametrics:8428/opentelemetry/v1/metrics` です。デフォルトのCollector設定は `collector/local.yaml` にあります。VictoriaMetricsの保存データは `vm-data` ボリュームに保持され、`make down` では消去しません。
+
+### 過去データの流量制御
+
+`-interval` はメトリクスのサンプリング時刻の間隔、`-send-interval` は **OTLPリクエスト開始時刻間の最小間隔** です。後者は `-output otlp` の場合のみ指定でき、既定値の `0` ではレート制限を行いません。送信は順次実行されるため、通信が遅い場合はさらに低速になります。未来時刻のデータは既存どおり該当時刻まで待機します。
+
+```sh
+# 2026-11-06 UTCから3日分を、1分間隔のサンプルで生成し、最大10リクエスト/秒で送信
+make run-otlp ARGS='-start 2026-11-06 -days 3 -interval 1m -send-interval 100ms'
+```
+
+1サンプリング時刻ごとに1リクエストを送るため、3日・1分間隔で4,320リクエストです。100ms指定なら通信時間を除いて約7分12秒です。OTLP受信成功は最終バックエンドへの保存完了を保証しません。Grafana Cloudの送信キューは1 consumer、上限1,000リクエスト、満杯時ブロック、失敗時の指数バックオフ付きリトライを設定しています。メモリキューなのでCollector停止時に未送信データが失われる可能性があります。CollectorのログやGrafana Cloudの検索結果で保存状況を確認してください。
+
+過去時刻のメトリクスはバックエンドのタイムスタンプ受入条件に従います。同じ時系列に新しいデータが既にある場合、古いデータの追加が拒否される場合があります。バックフィルでは時刻順に投入し、検証用の新しい系列を使うことを推奨します。
 
 ### Collector送信先の切り替え
 
