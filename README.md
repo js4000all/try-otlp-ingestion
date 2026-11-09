@@ -73,7 +73,7 @@ make check
 
 AIによる変更も含めた詳細な規約は [AGENTS.md](AGENTS.md) を参照してください。
 
-## CollectorからVictoriaMetrics / Grafana Cloudへの投入
+## CollectorからVictoriaMetrics / Grafana Cloud / Mackerelへの投入
 
 デフォルトではComposeでCollectorとVictoriaMetricsを起動し、VictoriaMetricsに送信します。公開ポートはローカルホスト限定です。
 
@@ -137,7 +137,7 @@ make run-otlp ARGS='-start 2026-11-06 -days 3 -interval 1m -send-interval 100ms'
 
 ### Collector送信先の切り替え
 
-Collector設定は `collector/local.yaml`（VictoriaMetrics用）と `collector/grafana-cloud.yaml`（Grafana Cloud用）から選択できます。Composeが `OTEL_COLLECTOR_CONFIG` を展開します。未指定の場合は `local.yaml` が使われ、`.env` がなくてもローカル構成を起動できます。
+Collector設定は `collector/local.yaml`（VictoriaMetrics用）、`collector/grafana-cloud.yaml`（Grafana Cloud用）、`collector/mackerel.yaml`（Mackerel用）から選択できます。Composeが `OTEL_COLLECTOR_CONFIG` を展開します。未指定の場合は `local.yaml` が使われ、`.env` がなくてもローカル構成を起動できます。
 
 ```sh
 cp .env.example .env
@@ -150,6 +150,27 @@ OTEL_COLLECTOR_CONFIG=grafana-cloud.yaml make up
 ```
 
 Grafana Cloudの「Collector setup」で取得したOTLP endpoint（`https://.../otlp`）、instance ID、書き込み権限付きtokenを、それぞれ `GRAFANA_CLOUD_OTLP_ENDPOINT`、`GRAFANA_CLOUD_INSTANCE_ID`、`GRAFANA_CLOUD_API_KEY` に設定してください。Grafana Cloud用の設定はOTLP/HTTPでmetricsを送信します。現在の`otlpgen`はmetricsのみを生成します。
+
+### MackerelへのOTLP投入
+
+Mackerelの**ラベル付きメトリック**を利用できるプランと、Write権限を持つAPIキーが必要です。Mackerel用プロファイルは、ローカルのCollectorではOTLP/HTTPを受信し、Mackerelの `otlp.mackerelio.com:4317` に **TLS付きOTLP/gRPC** で転送します。Grafana Cloudとは接続方式が異なりますが、`otlpgen` の変更は不要です。
+
+```sh
+cp .env.example .env
+# .env を編集:
+# OTEL_COLLECTOR_CONFIG=mackerel.yaml
+# MACKEREL_APIKEY=<Write権限を持つAPIキー>
+
+make up
+make run-otlp ARGS='-count 1'
+docker compose logs --tail=100 otel-collector
+```
+
+`.env` を変更せずにプロファイルだけ一時的に選ぶ場合は、`OTEL_COLLECTOR_CONFIG=mackerel.yaml make up` も利用できます（APIキーは `.env` に設定してください）。変更後に古いCollectorが動作している場合は `docker compose up -d --force-recreate otel-collector` で再作成します。
+
+Mackerel用の送信キューは1 consumer、容量1,000、満杯時ブロック、リトライは初回5秒・最大30秒・継続10分です。Collectorが受信に成功してもMackerelでの保存を保証しません。キューはメモリ上にあり、Collector停止時には未送信分が失われ得ます。送信後はMackerelのラベル付きメトリック画面とCollectorのログを確認してください。
+
+モデル互換性の検証では、`temperature`、`vibration`、`運転中`、`plc_reader.read_errors` の名前、Resource属性（`site_id`、`area` など）、DataPoint属性（`sensor_id`、`position` など）、GaugeとCumulative Sumの扱いを比較します。変換結果は実際の検索結果で確認し、あらかじめ同名で保存されることは仮定しません。
 
 Composeの `.env` は設定選択に使われ、`env_file` によりCollectorコンテナにも渡されます。`.env` はGit管理対象外です。**認証情報をコミットしないでください。** 設定を切り替えた場合は、Collectorの再作成を確認してください（必要なら `docker compose up -d --force-recreate otel-collector`）。
 

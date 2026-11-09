@@ -1,0 +1,29 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlp/mackerel:
+    endpoint: otlp.mackerelio.com:4317
+    tls:
+      insecure: false
+    headers:
+      Mackerel-Api-Key: ${env:MACKEREL_APIKEY}
+    sending_queue:
+      enabled: true
+      num_consumers: 1
+      queue_size: 1000
+      block_on_overflow: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 10m
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [otlp/mackerel]
