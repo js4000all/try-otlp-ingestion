@@ -49,14 +49,8 @@ type DataPoint struct {
 	Value          float64           `json:"value"`
 }
 
-type source struct {
-	reader Reader
-	plc    string
-}
-
 type Generator struct {
 	config  Config
-	sources map[string]source
 	states  map[string]float64
 	rng     *rand.Rand
 	start   time.Time
@@ -65,19 +59,11 @@ type Generator struct {
 func New(c Config, seed int64, start time.Time) *Generator {
 	g := &Generator{
 		config:  c,
-		sources: make(map[string]source),
 		states:  make(map[string]float64),
 		rng:     rand.New(rand.NewSource(seed)),
 		start:   start,
 	}
 
-	for _, reader := range c.Readers {
-		for _, plc := range reader.PLCs {
-			for _, target := range plc.Targets {
-				g.sources[reader.SiteID+"/"+target] = source{reader: reader, plc: plc.ID}
-			}
-		}
-	}
 	return g
 }
 
@@ -137,28 +123,69 @@ func (g *Generator) sample(key string, pattern Pattern, at time.Time) float64 {
 	}
 }
 
+// At groups all metrics by their collecting PLC Reader. Every Resource has
+// one stable service identity, so backends can associate it with target_info.
 func (g *Generator) At(at time.Time) Batch {
-	var result Batch
-
+	type locatedTarget struct {
+		site   Site
+		area   Area
+		target Target
+	}
+	targets := make(map[string]locatedTarget)
 	for _, site := range g.config.Sites {
 		for _, area := range site.Areas {
 			for _, target := range area.Targets {
-				result.ResourceMetrics = append(result.ResourceMetrics, g.siteMetrics(site, area, target, at))
+				targets[site.ID+"/"+target.ID] = locatedTarget{site: site, area: area, target: target}
 			}
 		}
 	}
 
+	result := Batch{ResourceMetrics: make([]ResourceMetrics, 0, len(g.config.Readers))}
 	for _, reader := range g.config.Readers {
-		for _, plc := range reader.PLCs {
-			result.ResourceMetrics = append(result.ResourceMetrics, g.opsMetrics(reader, plc, at))
+		metrics := make([]Metric, 0)
+		index := make(map[string]int)
+
+		// Merge data points of the same metric into a single metric per
+		// Resource/Scope, avoiding duplicate metric definitions.
+		appendMetrics := func(items []Metric) {
+			for _, metric := range items {
+				i, exists := index[metric.Name]
+				if !exists {
+					index[metric.Name] = len(metrics)
+					metrics = append(metrics, metric)
+					continue
+				}
+				metrics[i].DataPoints = append(metrics[i].DataPoints, metric.DataPoints...)
+			}
 		}
+
+		for _, plc := range reader.PLCs {
+			for _, targetID := range plc.Targets {
+				target := targets[reader.SiteID+"/"+targetID]
+				appendMetrics(g.siteMetrics(target.site, target.area, target.target, plc.ID, at))
+			}
+			appendMetrics(g.opsMetrics(reader, plc, at))
+		}
+
+		result.ResourceMetrics = append(result.ResourceMetrics, ResourceMetrics{
+			Resource: Resource{Attributes: map[string]string{
+				"service.namespace":   "industrial-monitoring",
+				"service.name":        "plc-reader",
+				"service.instance.id": reader.ID,
+				"site_id":             reader.SiteID,
+				"host.id":             reader.HostID,
+			}},
+			ScopeMetrics: []ScopeMetrics{{
+				Scope:   Scope{Name: "plc-reader"},
+				Metrics: metrics,
+			}},
+		})
 	}
 	return result
 }
 
-func (g *Generator) siteMetrics(site Site, area Area, target Target, at time.Time) ResourceMetrics {
+func (g *Generator) siteMetrics(site Site, area Area, target Target, plcID string, at time.Time) []Metric {
 	targetType := g.config.TargetTypes[target.Type]
-	src := g.sources[site.ID+"/"+target.ID]
 	metrics := make([]Metric, 0, len(targetType.Metrics))
 
 	for _, def := range targetType.Metrics {
@@ -179,10 +206,14 @@ func (g *Generator) siteMetrics(site Site, area Area, target Target, at time.Tim
 				}
 
 				attributes := map[string]string{
-					"sensor_id":   sensor.ID,
-					"position":    sensor.Position,
-					"source_type": "plc",
-					"source_id":   src.plc,
+					"monitoring.domain": "site_iot",
+					"area":              area.ID,
+					"target_id":         target.ID,
+					"target_type":       target.Type,
+					"sensor_id":         sensor.ID,
+					"position":          sensor.Position,
+					"source_type":       "plc",
+					"source_id":         plcID,
 				}
 				if def.SignalType != "" {
 					attributes["signal_type"] = def.SignalType
@@ -201,22 +232,10 @@ func (g *Generator) siteMetrics(site Site, area Area, target Target, at time.Tim
 		}
 	}
 
-	return ResourceMetrics{
-		Resource: Resource{Attributes: map[string]string{
-			"monitoring.domain": "site_iot",
-			"site_id":           site.ID,
-			"area":              area.ID,
-			"target_id":         target.ID,
-			"target_type":       target.Type,
-		}},
-		ScopeMetrics: []ScopeMetrics{{
-			Scope:   Scope{Name: "plc-reader"},
-			Metrics: metrics,
-		}},
-	}
+	return metrics
 }
 
-func (g *Generator) opsMetrics(reader Reader, plc PLC, at time.Time) ResourceMetrics {
+func (g *Generator) opsMetrics(reader Reader, plc PLC, at time.Time) []Metric {
 	metrics := make([]Metric, 0, len(g.config.OpsMetrics["plc-reader"]))
 
 	for _, def := range g.config.OpsMetrics["plc-reader"] {
@@ -229,7 +248,7 @@ func (g *Generator) opsMetrics(reader Reader, plc PLC, at time.Time) ResourceMet
 			Monotonic:   def.Monotonic,
 			Temporality: def.Temporality,
 			DataPoints: []DataPoint{{
-				Attributes:     map[string]string{"source_id": plc.ID},
+				Attributes:     map[string]string{"monitoring.domain": "ops", "source_id": plc.ID},
 				StartTimestamp: &start,
 				Timestamp:      at,
 				Value:          value,
@@ -237,19 +256,7 @@ func (g *Generator) opsMetrics(reader Reader, plc PLC, at time.Time) ResourceMet
 		})
 	}
 
-	return ResourceMetrics{
-		Resource: Resource{Attributes: map[string]string{
-			"monitoring.domain":   "ops",
-			"site_id":             reader.SiteID,
-			"service.name":        "plc-reader",
-			"service.instance.id": reader.ID,
-			"host.id":             reader.HostID,
-		}},
-		ScopeMetrics: []ScopeMetrics{{
-			Scope:   Scope{Name: "plc-reader"},
-			Metrics: metrics,
-		}},
-	}
+	return metrics
 }
 
 // Run writes JSON Lines to out for each timestamp in [start, start+days).
