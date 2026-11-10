@@ -23,39 +23,71 @@ func TestConfigAndSeries(t *testing.T) {
 	start := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	batch := New(config, 1, start).At(start)
 
-	if len(batch.ResourceMetrics) != 7 {
-		t.Fatalf("resources=%d, want 7", len(batch.ResourceMetrics))
+	if got := len(batch.ResourceMetrics); got != 2 {
+		t.Fatalf("resources=%d, want 2 PLC Readers", got)
 	}
 
+	byReader := make(map[string]ResourceMetrics)
 	sitePoints, opsPoints := 0, 0
+	areas := make(map[string]bool)
 	for _, resource := range batch.ResourceMetrics {
+		attrs := resource.Resource.Attributes
+		if attrs["service.namespace"] != "industrial-monitoring" || attrs["service.name"] != "plc-reader" {
+			t.Fatalf("missing service identity: %v", attrs)
+		}
+		readerID := attrs["service.instance.id"]
+		if readerID == "" || byReader[readerID].Resource.Attributes != nil {
+			t.Fatalf("missing or duplicate reader %q", readerID)
+		}
+		byReader[readerID] = resource
+		if len(resource.ScopeMetrics) != 1 || resource.ScopeMetrics[0].Scope.Name != "plc-reader" {
+			t.Fatalf("unexpected scope for %s", readerID)
+		}
+
+		names := make(map[string]bool)
 		for _, scope := range resource.ScopeMetrics {
 			for _, metric := range scope.Metrics {
+				if names[metric.Name] {
+					t.Fatalf("duplicated metric %q for reader %s", metric.Name, readerID)
+				}
+				names[metric.Name] = true
 				for _, point := range metric.DataPoints {
 					if !point.Timestamp.Equal(start) {
-						t.Fatal("timestamp")
+						t.Fatal("timestamp mismatch")
 					}
-					switch resource.Resource.Attributes["monitoring.domain"] {
+					switch point.Attributes["monitoring.domain"] {
 					case "site_iot":
 						sitePoints++
-						if point.Attributes["sensor_id"] == "" {
-							t.Fatal("missing sensor_id")
+						if point.Attributes["sensor_id"] == "" || point.Attributes["target_id"] == "" || point.Attributes["target_type"] == "" || point.Attributes["area"] == "" || point.Attributes["source_id"] == "" {
+							t.Fatalf("missing target dimensions: %v", point.Attributes)
 						}
+						areas[attrs["site_id"]+"/"+point.Attributes["area"]] = true
 					case "ops":
 						opsPoints++
 						if !metric.Monotonic || metric.Temporality != "cumulative" || point.StartTimestamp == nil {
 							t.Fatal("invalid ops sum")
 						}
+						if point.Attributes["source_id"] == "" {
+							t.Fatal("missing PLC id")
+						}
 					default:
-						t.Fatal("missing domain")
+						t.Fatalf("missing monitoring.domain: %v", point.Attributes)
 					}
 				}
 			}
 		}
 	}
-
 	if sitePoints != 16 || opsPoints != 3 {
 		t.Fatalf("points site=%d ops=%d, want 16 and 3", sitePoints, opsPoints)
+	}
+	if len(areas) != 3 {
+		t.Fatalf("site/area combinations=%v, want three", areas)
+	}
+	if got := byReader["reader_01"].Resource.Attributes["site_id"]; got != "S001" {
+		t.Fatalf("reader_01 site=%q", got)
+	}
+	if got := byReader["reader_02"].Resource.Attributes["site_id"]; got != "S002" {
+		t.Fatalf("reader_02 site=%q", got)
 	}
 }
 
@@ -122,8 +154,8 @@ func TestRunCountSingleImmediate(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &batch); err != nil {
 		t.Fatal(err)
 	}
-	if len(batch.ResourceMetrics) != 7 {
-		t.Fatalf("resources=%d want 7", len(batch.ResourceMetrics))
+	if len(batch.ResourceMetrics) != 2 {
+		t.Fatalf("resources=%d want 2", len(batch.ResourceMetrics))
 	}
 	for _, resource := range batch.ResourceMetrics {
 		for _, scope := range resource.ScopeMetrics {
