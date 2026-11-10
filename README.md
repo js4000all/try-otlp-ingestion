@@ -42,7 +42,23 @@ make check
 | `config/site-area-target.yaml` | サイト、区画、ターゲット、センサー |
 | `config/plc-target.yaml` | PLC Reader、PLC、ターゲットの対応 |
 
-現在は2サイト・4モーター・3PLCです。温度（軸受: sine、巻線: random walk）、振動（spike）、運転状態（toggle）、PLC読み取りエラー累積（counter）の4 Metricを生成します。サイトIoTと運用監視のドメインはResource属性 `monitoring.domain` で区別します。
+現在は2サイト・4モーター・3PLC・2 PLC Readerです。温度（軸受: sine、巻線: random walk）、振動（spike）、運転状態（toggle）、PLC読み取りエラー累積（counter）の4 Metricを生成します。ResourceはPLC Reader単位で構成し、サイトIoTと運用監視のドメインはDataPoint属性 `monitoring.domain` で区別します。
+
+### Resource / Scope / DataPointの設計
+
+1つのReaderについて1つのResourceMetricsを生成し、同一の計測Scope（`plc-reader`）に設備・運用メトリクスを集約します。4台のモーターと3台のPLCを扱う現行構成では、**2 Resource・各メトリクスに合計19 DataPoint**を生成します。Resource属性は以下のとおりです。
+
+```text
+service.namespace   = industrial-monitoring
+service.name        = plc-reader
+service.instance.id = reader_01
+site_id             = S001
+host.id             = raspi_01
+```
+
+設備を示す `area` / `target_id` / `target_type`、センサー情報、PLC識別子はDataPoint属性として保持します。Readerは複数設備・PLCを扱うため、同じメトリクス名のDataPointをReader内で集約します。運用監視のDataPointには `monitoring.domain=ops`、設備メトリクスには `monitoring.domain=site_iot` を付けます。各種バックエンドの検索でResource属性とDataPoint属性の扱いが異なるため、Grafana Cloudでの確認時には `target_info`、`job`、`instance` とそれぞれのデータポイントラベルを調べます。
+
+`service.namespace` は収集システムの論理的なグループ、`service.name` は収集ソフトウェア、`service.instance.id` はReaderインスタンス、`Scope.Name` は計測処理を識別します。ScopeとServiceの役割の見直しは今後の検証事項です。`target_info` は原則としてReaderに対応するResource情報の系列であり、個々のメトリクスごとに1つ生成されるわけではありません。
 
 ## 開発コマンド
 
