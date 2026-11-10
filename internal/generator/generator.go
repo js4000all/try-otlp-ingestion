@@ -50,18 +50,18 @@ type DataPoint struct {
 }
 
 type Generator struct {
-	config  Config
-	states  map[string]float64
-	rng     *rand.Rand
-	start   time.Time
+	config Config
+	states map[string]float64
+	rng    *rand.Rand
+	start  time.Time
 }
 
 func New(c Config, seed int64, start time.Time) *Generator {
 	g := &Generator{
-		config:  c,
-		states:  make(map[string]float64),
-		rng:     rand.New(rand.NewSource(seed)),
-		start:   start,
+		config: c,
+		states: make(map[string]float64),
+		rng:    rand.New(rand.NewSource(seed)),
+		start:  start,
 	}
 
 	return g
